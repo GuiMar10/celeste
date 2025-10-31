@@ -22,7 +22,7 @@
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "meta-llama/llama-3.3-70b-instruct:free",
+          model: "qwen/qwen3-30b-a3b:free",
           messages: history,
           stream: true,
         }),
@@ -82,6 +82,12 @@
     }
   }
 
+  function formatResponse(text) {
+    return text
+      .replace(/\*\*(.*?)\*\*/g, "<b>$1</b>")
+      .replace(/\*(.*?)\*/g, "<i>$1</i>");
+  }
+
   onMount(() => {
     const promptArea = document.getElementById("prompt");
     document.addEventListener("keydown", function (event) {
@@ -96,6 +102,7 @@
         promptArea.focus();
       }
       if (event.key.match("o") && event.shiftKey && event.ctrlKey) {
+        event.preventDefault();
         prompting = true;
         prompt = "";
         history = [];
@@ -108,6 +115,7 @@
   });
 </script>
 
+<title>ChatGPT</title>
 <div id={prompting ? "center" : "bottom"}>
   {#if prompting}
     <h1>Hey, ready to dive in?</h1>
@@ -124,7 +132,7 @@
     <div id="spacing" style="height: 80px;"></div>
     {#each history as msg}
       <div class={msg.role == "user" ? "question" : "response"}>
-        {msg.content}
+        {@html formatResponse(msg.content)}
       </div>
     {/each}
     <div class="response">{realtResponse}</div>
@@ -164,7 +172,7 @@
   }
   @keyframes loading {
     50% {
-      scale: 0.94;
+      scale: 0.93;
     }
     100% {
       scale: 1;
