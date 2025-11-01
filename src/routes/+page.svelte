@@ -1,14 +1,22 @@
 <script>
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
+  import settingsIcon from "$lib/assets/settings.svg";
 
   let prompting = true;
   let prompt = "";
+  let model = "minimax/minimax-m2:free";
+  var systemPrompt = "";
   let loading = false;
   let ApiKey =
     "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";
   let history = [];
   let realtResponse = "";
+
   async function sendQuery(query) {
+    if (!query) return;
+    if (systemPrompt && history.length === 0)
+      history = [{ role: "system", content: systemPrompt }];
+
     prompting = false;
     prompt = "";
     history = [...history, { role: "user", content: query }];
@@ -22,7 +30,7 @@
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "qwen/qwen3-30b-a3b:free",
+          model: model,
           messages: history,
           stream: true,
         }),
@@ -88,30 +96,46 @@
       .replace(/\*(.*?)\*/g, "<i>$1</i>");
   }
 
-  onMount(() => {
+  function handleKey(e) {
     const promptArea = document.getElementById("prompt");
-    document.addEventListener("keydown", function (event) {
-      if (
-        event.key.match(/^[a-zA-Z]$/) &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        document.activeElement !== promptArea
-      ) {
-        event.preventDefault();
-        promptArea.focus();
-      }
-      if (event.key.match("o") && event.shiftKey && event.ctrlKey) {
-        event.preventDefault();
-        prompting = true;
-        prompt = "";
-        history = [];
-      }
-      if (event.key.match("Enter") && !event.shiftKey) {
-        event.preventDefault();
-        sendQuery(prompt);
-      }
-    });
+    // Press any key to focus on the textarea.
+    if (
+      e.key.length == 1 &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      document.activeElement !== promptArea
+    ) {
+      e.preventDefault();
+      promptArea.focus();
+    }
+    // Ctrl + Shift + O to create a new chat
+    if (e.ctrlKey && e.shiftKey && e.key === "O") {
+      e.preventDefault();
+      prompting = true;
+      prompt = "";
+      history = [];
+    }
+    // Esc to open settings
+    if (e.key.match("Esc")) {
+      e.preventDefault();
+      document.getElementById("settings").togglePopover();
+    }
+    // Enter to send the query
+    if (
+      e.key == "Enter" &&
+      !e.shiftKey &&
+      document.activeElement === promptArea
+    ) {
+      e.preventDefault();
+      sendQuery(prompt);
+    }
+  }
+
+  onMount(() => document.addEventListener("keydown", handleKey));
+  onDestroy(() => {
+    if (typeof window !== "undefined")
+      document.removeEventListener("keydown", handleKey);
   });
 </script>
 
@@ -135,13 +159,29 @@
         {@html formatResponse(msg.content)}
       </div>
     {/each}
-    <div class="response">{realtResponse}</div>
+    <div class="response">{@html formatResponse(realtResponse)}</div>
     {#if loading}
       <div id="loading"></div>
     {/if}
     <div id="spacing" style="height: 100px;"></div>
   </div>
 {/if}
+<div id="settings" popover>
+  <h1>Model</h1>
+  <p>Select a model compatible with OpenRouter's API.</p>
+  <input bind:value={model} placeholder="ex.: qwen/qwen3-30b-a3b" />
+  <hr />
+  <h2>Custom instructions</h2>
+  <input
+    bind:value={systemPrompt}
+    placeholder="Give more context, ask to be more concise"
+  />
+</div>
+<div id="sidebar">
+  <button popovertarget="settings">
+    <img src={settingsIcon} alt="Settings Icon" />
+  </button>
+</div>
 
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
@@ -149,13 +189,98 @@
     background-color: #212121;
     font-family: Inter;
     color: white;
+
+    --containerColor: rgba(255, 255, 255, 0.08);
+    --containerColor: rgba(255, 41, 41, 0.4);
+    --colorOutline: rgba(255, 255, 255, 0.05);
   }
   ::selection {
     background: rgba(57, 159, 255, 0.3);
+    background: var(--containerColor);
   }
   :global(body) {
     margin: 0;
     padding: 0;
+  }
+  #settings {
+    background: #212121;
+    color: white;
+    padding: 14px;
+    box-sizing: border-box;
+    border-radius: 16px;
+    border: 1px solid var(--colorOutline);
+    width: 50%;
+    box-shadow: 1px 1px 14px 1px rgb(0, 0, 0, 0.5);
+    animation: 0.2s settingsShow;
+  }
+  #settings::backdrop {
+    background: rgb(0, 0, 0, 0.5);
+    backdrop-filter: blur(1px);
+  }
+  #settings h1 {
+    font-size: 16px;
+    margin: 6px 0;
+    font-weight: 500;
+  }
+  #settings h2 {
+    font-size: 14px;
+    margin: 6px 0;
+    font-weight: 500;
+  }
+  #settings input {
+    color: white;
+    outline: 0;
+    background: var(--colorOutline);
+    border: 1px solid var(--colorOutline);
+    border-radius: 8px;
+    font-size: 15px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 4px;
+  }
+  #settings p {
+    margin: 0;
+    margin-bottom: 16px;
+    font-size: 14px;
+    opacity: 0.4;
+  }
+  #settings hr {
+    opacity: 0.1;
+    margin: 14px 0px;
+  }
+  #sidebar {
+    width: 55px;
+    height: 100%;
+    position: fixed;
+    left: 0;
+    padding: 6px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    border-right: 1px solid var(--colorOutline);
+  }
+  #sidebar button {
+    bottom: 10px;
+    position: absolute;
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+    cursor: pointer;
+    width: calc(100% - 12px);
+    padding: 6px 0px;
+  }
+  #sidebar button:hover {
+    background: rgb(48, 48, 48, 0.9);
+  }
+  #sidebar button img {
+    width: 22px;
+    margin-bottom: -2px;
+  }
+  @keyframes settingsShow {
+    from {
+      opacity: 0;
+    }
   }
   div#chat {
     width: 80%;
@@ -174,12 +299,9 @@
     50% {
       scale: 0.93;
     }
-    100% {
-      scale: 1;
-    }
   }
   .question {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--containerColor);
     width: fit-content;
     margin-left: auto;
     margin-right: 0;
@@ -234,5 +356,10 @@
   }
   textarea.compact {
     padding: 15px 20px;
+  }
+  @keyframes activateMode {
+    50% {
+      scale: 0.9;
+    }
   }
 </style>
