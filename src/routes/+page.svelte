@@ -5,11 +5,9 @@
 
   let prompting = true;
   let prompt = "";
-  let model = "minimax/minimax-m2:free";
+  let model = "openai/gpt-5";
   var systemPrompt = "";
   let loading = false;
-  let ApiKey =
-    "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";
   let history = [];
   let realtResponse = "";
 
@@ -24,25 +22,24 @@
     if (systemPrompt && history.length === 0)
       history = [{ role: "system", content: systemPrompt }];
 
+    document.querySelector("#prompt").classList.remove("big");
+    document.querySelector("#prompt").classList.add("compact");
     prompting = false;
     prompt = "";
     history = [...history, { role: "user", content: query }];
     loading = true;
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${ApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: history,
-          stream: true,
-        }),
-      }
-    );
+
+    const response = await fetch("/api/query", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: history,
+        stream: true,
+      }),
+    });
 
     const reader = response.body?.getReader();
 
@@ -209,13 +206,23 @@
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
   :root {
-    background-color: #212121;
+    color-scheme: dark light;
+    background-color: light-dark(#fff, #212121);
     font-family: Inter;
-    color: white;
+    color: var(--textColor);
 
-    --containerColor: rgba(255, 255, 255, 0.08);
+    --containerColor: light-dark(
+      rgba(0, 0, 0, 0.08),
+      rgba(255, 255, 255, 0.08)
+    );
     /* --containerColor: rgba(255, 41, 41, 0.4); */
-    --colorOutline: rgba(255, 255, 255, 0.05);
+    --textColor: light-dark(black, white);
+    --promptBgColor: light-dark(rgba(255, 255, 255, 0.9), rgb(48, 48, 48, 0.9));
+    --promptBorderColor: light-dark(
+      rgba(0, 0, 0, 0.2),
+      rgba(255, 255, 255, 0.07)
+    );
+    --colorOutline: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.05));
   }
   ::selection {
     background: rgba(57, 159, 255, 0.3);
@@ -294,11 +301,16 @@
     padding: 6px 0px;
   }
   #sidebar button:hover {
-    background: rgb(48, 48, 48, 0.9);
+    background: light-dark(rgba(226, 226, 226, 0.9), rgb(48, 48, 48, 0.9));
   }
   #sidebar button img {
     width: 20px;
     margin-bottom: -2px;
+  }
+  @media (prefers-color-scheme: light) {
+    #sidebar button img {
+      filter: invert(1) brightness(2);
+    }
   }
   @keyframes settingsShow {
     from {
@@ -315,7 +327,7 @@
     width: 16px;
     height: 16px;
     border-radius: 20px;
-    background: white;
+    background: var(--textColor);
     animation: loading 1s infinite;
   }
   @keyframes loading {
@@ -360,14 +372,15 @@
     justify-content: center;
   }
   textarea {
-    background: rgb(48, 48, 48, 0.9);
+    background: var(--promptBgColor);
     backdrop-filter: blur(8px);
-    border: 1px solid rgb(255, 255, 255, 0.07);
-    color: white;
+    border: 1px solid var(--promptBorderColor);
+    color: var(--textColor);
     border-radius: 30px;
     font-size: 16px;
     padding: 10px 20px;
-    box-shadow: 1px 1px 10px 2px rgb(0, 0, 0, 0.2);
+    box-shadow: 1px 1px 10px 2px
+      light-dark(rgb(0, 0, 0, 0.05), rgb(0, 0, 0, 0.2));
     width: 70%;
     max-width: 700px;
     margin: 0 auto;
@@ -375,7 +388,9 @@
     resize: none;
     font-family: Inter !important;
     outline: 0;
-    transition: 0.2s;
+    transition:
+      all 0.2s,
+      background 0s;
   }
   textarea.compact {
     padding: 15px 20px;
