@@ -1,0 +1,1 @@
+import { API_KEY } from '$env/static/private';

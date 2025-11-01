@@ -1,6 +1,7 @@
 <script>
   import { onDestroy, onMount } from "svelte";
   import settingsIcon from "$lib/assets/settings.svg";
+  import newChatIcon from "$lib/assets/newChat.svg";
 
   let prompting = true;
   let prompt = "";
@@ -11,6 +12,12 @@
     "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";
   let history = [];
   let realtResponse = "";
+
+  function newChat() {
+    prompting = true;
+    prompt = "";
+    history = [];
+  }
 
   async function sendQuery(query) {
     if (!query) return;
@@ -112,9 +119,7 @@
     // Ctrl + Shift + O to create a new chat
     if (e.ctrlKey && e.shiftKey && e.key === "O") {
       e.preventDefault();
-      prompting = true;
-      prompt = "";
-      history = [];
+      newChat();
     }
     // Esc to open settings
     if (e.key.match("Esc")) {
@@ -140,11 +145,20 @@
 </script>
 
 <title>ChatGPT</title>
-<div id={prompting ? "center" : "bottom"}>
+<div
+  style="transition: 0.4s cubic-bezier(0,.65,.21,1)"
+  id={prompting ? "center" : "bottom"}
+>
   {#if prompting}
     <h1>Hey, ready to dive in?</h1>
   {/if}
   <textarea
+    on:input={(e) => {
+      const el = e.target;
+      const shouldExpand = el.scrollHeight > 60 && el.value.length > 0;
+      el.classList.toggle("big", shouldExpand);
+      el.classList.toggle("compact", !shouldExpand);
+    }}
     bind:value={prompt}
     id="prompt"
     class="compact"
@@ -169,7 +183,13 @@
 <div id="settings" popover>
   <h1>Model</h1>
   <p>Select a model compatible with OpenRouter's API.</p>
-  <input bind:value={model} placeholder="ex.: qwen/qwen3-30b-a3b" />
+  <input
+    on:change={(e) => {
+      localStorage.setItem("model", e.target.value);
+    }}
+    bind:value={model}
+    placeholder="ex.: qwen/qwen3-30b-a3b"
+  />
   <hr />
   <h2>Custom instructions</h2>
   <input
@@ -181,6 +201,9 @@
   <button popovertarget="settings">
     <img src={settingsIcon} alt="Settings Icon" />
   </button>
+  <button on:click={newChat} style="bottom: auto; top: 10px;">
+    <img src={newChatIcon} alt="New Chat" />
+  </button>
 </div>
 
 <style>
@@ -191,7 +214,7 @@
     color: white;
 
     --containerColor: rgba(255, 255, 255, 0.08);
-    --containerColor: rgba(255, 41, 41, 0.4);
+    /* --containerColor: rgba(255, 41, 41, 0.4); */
     --colorOutline: rgba(255, 255, 255, 0.05);
   }
   ::selection {
@@ -274,7 +297,7 @@
     background: rgb(48, 48, 48, 0.9);
   }
   #sidebar button img {
-    width: 22px;
+    width: 20px;
     margin-bottom: -2px;
   }
   @keyframes settingsShow {
@@ -345,7 +368,6 @@
     font-size: 16px;
     padding: 10px 20px;
     box-shadow: 1px 1px 10px 2px rgb(0, 0, 0, 0.2);
-    height: 22px !important;
     width: 70%;
     max-width: 700px;
     margin: 0 auto;
@@ -353,13 +375,20 @@
     resize: none;
     font-family: Inter !important;
     outline: 0;
+    transition: 0.2s;
   }
   textarea.compact {
     padding: 15px 20px;
+    height: 22px !important;
+  }
+  :global(.big) {
+    padding: 15px 15px !important;
+    border-radius: 26px !important;
+    height: 70px !important;
   }
   @keyframes activateMode {
-    50% {
-      scale: 0.9;
+    0% {
+      scale: 0.95;
     }
   }
 </style>
