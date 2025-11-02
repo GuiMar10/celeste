@@ -15,7 +15,7 @@
 
   let prompting = true;
   let prompt = "";
-  let model = "x-ai/grok-4-fast";
+  let model = "deepseek/deepseek-chat-v3.1";
   var systemPrompt = "Use emojis and markdown. Be short and concise.";
   let loading = false;
   let reasonEnabled = false;
@@ -126,13 +126,11 @@
           // effort: "medium",
           enabled: reasonEnabled,
         },
-        /*
-        // Not needed when using Grok
-        plugins: [
+        /*plugins: [
           {
             id: "web",
           },
-        ],*/
+        ], */
       }),
     });
 
