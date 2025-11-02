@@ -3,6 +3,7 @@
   import settingsIcon from "$lib/assets/settings.svg";
   import newChatIcon from "$lib/assets/newChat.svg";
   import sidebar from "$lib/assets/sidebar.svg";
+  import send from "$lib/assets/send.svg";
   import {
     openDB,
     addChat,
@@ -15,7 +16,7 @@
   let prompting = true;
   let prompt = "";
   let model = "x-ai/grok-4-fast";
-  var systemPrompt = "";
+  var systemPrompt = "Use emojis and markdown. Be short and concise.";
   let loading = false;
   let reasonEnabled = false;
   let history = [];
@@ -24,6 +25,17 @@
 
   let savedChats = [];
   let currentChatId = null; // null means it's a new chat
+
+  const greetings = [
+    "Hey, ready to dive in?",
+    "What's on your mind today?",
+    "What are you working on?",
+  ];
+
+  function getGreeting() {
+    const randomIndex = Math.floor(Math.random() * greetings.length);
+    return greetings[randomIndex];
+  }
 
   function newChat() {
     prompting = true;
@@ -54,8 +66,7 @@
     }
   }
 
-  async function handleDeleteChat(id, event) {
-    // event.stopPropagation();
+  async function handleDeleteChat(id) {
     if (confirm("Are you sure you want to delete this chat?")) {
       try {
         await deleteChat(id);
@@ -108,13 +119,20 @@
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: model,
+        model,
         messages: history,
         stream: true,
         reasoning: {
           // effort: "medium",
           enabled: reasonEnabled,
         },
+        /*
+        // Not needed when using Grok
+        plugins: [
+          {
+            id: "web",
+          },
+        ],*/
       }),
     });
 
@@ -183,6 +201,7 @@
   }
 
   function toggleSidebar() {
+    sidebarExpanded = !sidebarExpanded;
     const sidebar = document.querySelector(".sidebar");
     if (sidebarExpanded) {
       document.documentElement.style.setProperty("--sidebarSize", "240px");
@@ -191,13 +210,33 @@
     }
     sidebar.classList.toggle("expanded", sidebarExpanded);
     sidebar.classList.toggle("compact", !sidebarExpanded);
-    sidebarExpanded = !sidebarExpanded;
   }
 
   function formatResponse(text) {
-    return text
+    let escaped = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // Convert Markdown headings and formatting
+    let formatted = escaped
+      .replace(/^###### (.*$)/gm, "<h6>$1</h6>")
+      .replace(/^##### (.*$)/gm, "<h5>$1</h5>")
+      .replace(/^#### (.*$)/gm, "<h4>$1</h4>")
+      .replace(/^### (.*$)/gm, "<h3>$1</h3>")
+      .replace(/^## (.*$)/gm, "<h2>$1</h2>")
+      .replace(/^# (.*$)/gm, "<h1>$1</h1>")
       .replace(/\*\*(.*?)\*\*/g, "<b>$1</b>")
-      .replace(/\*(.*?)\*/g, "<i>$1</i>");
+      .replace(/\*(.*?)\*/g, "<i>$1</i>")
+      // Code blocks (triple backticks)
+      .replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>")
+      // Inline code (single backticks)
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+
+    // Detect inline HTML (escaped like &lt;div&gt;) and wrap in <code>
+    formatted = formatted.replace(
+      /(&lt;\/?[a-z][^&]*?&gt;)/gi,
+      "<code>$1</code>"
+    );
+
+    return formatted;
   }
 
   function handleKey(e) {
@@ -208,7 +247,8 @@
       !e.ctrlKey &&
       !e.metaKey &&
       !e.altKey &&
-      document.activeElement !== promptArea
+      document.activeElement !== promptArea &&
+      document.activeElement.tagName !== "INPUT"
     ) {
       e.preventDefault();
       promptArea.focus();
@@ -235,6 +275,9 @@
   }
 
   onMount(() => {
+    if (localStorage.getItem("model")) model = localStorage.getItem("model");
+    if (localStorage.getItem("sysPrompt"))
+      systemPrompt = localStorage.getItem("sysPrompt");
     document.addEventListener("keydown", handleKey);
 
     openDB().then(() => {
@@ -253,28 +296,41 @@
   id={prompting ? "center" : "bottom"}
 >
   {#if prompting}
-    <h1>Hey, ready to dive in?</h1>
+    <h1>{getGreeting()}</h1>
   {/if}
-  <textarea
-    on:input={(e) => {
-      const el = e.target;
-      const shouldExpand = el.scrollHeight > 60 && el.value.length > 0;
-      el.classList.toggle("big", shouldExpand);
-      el.classList.toggle("compact", !shouldExpand);
-    }}
-    bind:value={prompt}
-    id="prompt"
-    class="compact"
-    placeholder="Ask anything"
-  ></textarea>
+  <div class="prompt-container">
+    <textarea
+      on:input={(e) => {
+        const el = e.target;
+        const shouldExpand = el.scrollHeight > 60 && el.value.length > 0;
+        el.classList.toggle("big", shouldExpand);
+        el.classList.toggle("compact", !shouldExpand);
+      }}
+      bind:value={prompt}
+      id="prompt"
+      class="compact"
+      placeholder="Ask anything"
+    ></textarea>
+    <button
+      id="send-button"
+      on:click={() => {
+        sendQuery(prompt);
+      }}
+      disabled={!prompt}
+    >
+      <img style="margin-top: 2px;" width="22" src={send} alt="Send" />
+    </button>
+  </div>
 </div>
 {#if !prompting}
   <div id="chat">
     <div id="spacing" style="height: 80px;"></div>
     {#each history as msg}
-      <div class={msg.role == "user" ? "question" : "response"}>
-        {@html formatResponse(msg.content)}
-      </div>
+      {#if msg.role !== "system"}
+        <div class={msg.role == "user" ? "question" : "response"}>
+          {@html formatResponse(msg.content)}
+        </div>
+      {/if}
     {/each}
     <div class="response">{@html formatResponse(realtResponse)}</div>
     {#if loading}
@@ -301,28 +357,33 @@
   <h2>Custom instructions</h2>
   <input
     bind:value={systemPrompt}
+    on:change={(e) => {
+      localStorage.setItem("sysPrompt", e.target.value);
+    }}
     placeholder="Give more context, ask to be more concise"
   />
 </div>
-<div class="sidebar expanded">
+<div class="sidebar compact">
   <button
     class="icon"
     on:click={toggleSidebar}
-    style="bottom: auto; top: 10px;"
+    style="cursor: e-resize; margin-bottom: 15px; opacity: 0.7;"
   >
     <img src={sidebar} alt="Toggle sidebar" />
+    <span>Toggle sidebar</span>
   </button>
-  <button class="icon" on:click={newChat} style="bottom: auto; top: 10px;">
+  <button class="icon" on:click={newChat}>
     <img src={newChatIcon} alt="New Chat" />
+    <span>New Chat</span>
   </button>
   <div id="chat-list">
+    <p>Chats</p>
     {#each savedChats as chat (chat.id)}
       <button
         class="chat-item"
+        on:click={() => loadChat(chat.id)}
         on:mousedown={(e) => {
-          if (e.button === 0) {
-            loadChat(chat.id);
-          } else if (e.button === 1) {
+          if (e.button === 1) {
             e.preventDefault();
             handleDeleteChat(chat.id);
           }
@@ -343,22 +404,35 @@
   @import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
   :root {
     color-scheme: dark light;
-    background-color: light-dark(#fff, #212121);
+    background-color: var(--bgColor);
     font-family: Inter;
     color: var(--textColor);
 
-    --sidebarSize: 240px;
+    --sidebarSize: 55px;
 
+    --primaryColor: light-dark(black, white);
     --containerColor: light-dark(
       rgba(0, 0, 0, 0.08),
       rgba(255, 255, 255, 0.08)
     );
-    /* --containerColor: rgba(255, 41, 41, 0.4); */
+
+    /* Custom theme 
+    --primaryColor: light-dark(black, rgb(255, 114, 114));
+    --containerColor: rgba(255, 84, 84, 0.3);
+
+    --primaryColor: light-dark(black, rgb(152, 255, 56));
+    --containerColor: rgba(149, 255, 43, 0.3);
+    */
+
+    --bgColor: light-dark(#fff, #212121);
     --textColor: light-dark(black, white);
-    --promptBgColor: light-dark(rgba(255, 255, 255, 0.9), rgb(48, 48, 48, 0.9));
+    --promptBgColor: light-dark(
+      rgba(255, 255, 255, 0.9),
+      rgba(50, 50, 50, 0.9)
+    );
     --promptBorderColor: light-dark(
       rgba(0, 0, 0, 0.2),
-      rgba(255, 255, 255, 0.07)
+      rgba(255, 255, 255, 0.09)
     );
     --colorOutline: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.05));
   }
@@ -370,6 +444,21 @@
     margin: 0;
     padding: 0;
   }
+  #send-button {
+    background: var(--primaryColor);
+    border: none;
+    width: 35px;
+    height: 35px;
+    border-radius: 40px;
+    margin: 0;
+    transform: translateY(-9px) translateX(-10px);
+    cursor: pointer;
+    &:disabled {
+      opacity: 0.2;
+      cursor: default;
+    }
+  }
+
   #settings {
     background: #212121;
     color: white;
@@ -436,7 +525,7 @@
       cursor: pointer;
       width: 100%;
       text-align: left;
-      padding: 6px 6px;
+      padding: 6px 8px;
       &:hover {
         background: light-dark(rgba(226, 226, 226, 0.9), rgb(48, 48, 48, 0.9));
       }
@@ -448,18 +537,57 @@
         margin-bottom: -2px;
       }
     }
+    & #chat-list p {
+      opacity: 0.5;
+      margin: 0;
+      margin-top: 16px;
+      margin-left: 6px;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+  }
+  .prompt-container {
+    display: flex;
+    align-items: flex-end;
+    background: var(--promptBgColor);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--promptBorderColor);
+    box-shadow: 1px 1px 10px 2px
+      light-dark(rgb(0, 0, 0, 0.05), rgb(0, 0, 0, 0.2));
+    width: 70%;
+    max-width: 700px;
+    margin: 0 auto;
+    transition:
+      all 0.2s,
+      background 0;
+
+    &:has(textarea.compact) {
+      border-radius: 30px;
+    }
+    &:has(:global(textarea.big)) {
+      border-radius: 26px !important;
+    }
   }
   :global(.sidebar.compact) {
     background: transparent;
+    & #chat-list {
+      display: none;
+    }
+    & button.icon span {
+      display: none;
+    }
   }
-  :global(.sidebar.compact) #chat-list {
-    display: none;
-  }
-  .sidebar.expanded {
+  :global(.sidebar.expanded) {
     background: light-dark(#f9f9f9, #181818);
-  }
-  .sidebar.expanded button {
-    text-align: left;
+    & button {
+      text-align: left;
+    }
+    & button.icon span {
+      display: inline-block;
+      vertical-align: 3px;
+      font-size: 14px;
+      margin-left: 4px;
+    }
   }
   #reasoning {
     background: linear-gradient(
@@ -483,11 +611,6 @@
       background-position: 200% center;
     }
   }
-  @media (prefers-color-scheme: light) {
-    .sidebar button img {
-      filter: invert(1) brightness(2);
-    }
-  }
   @keyframes settingsShow {
     from {
       opacity: 0;
@@ -495,9 +618,11 @@
   }
   div#chat {
     position: absolute;
-    width: calc(80% - var(--sidebarSize));
     left: calc(10% + var(--sidebarSize));
     right: 10%;
+    max-width: 800px;
+    margin: 0 auto;
+    transition: 0.2s;
   }
   #loading {
     width: 16px;
@@ -539,38 +664,37 @@
   }
   div#center h1 {
     text-align: center;
+    font-size: 30px;
     font-weight: 500;
+    margin-bottom: 26px;
   }
   div#bottom {
     position: fixed;
-    bottom: 20px;
     top: auto;
     z-index: 10;
+    background: linear-gradient(transparent, var(--bgColor) 50%);
+    bottom: 0;
+    padding-bottom: 20px;
   }
   textarea {
-    background: var(--promptBgColor);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--promptBorderColor);
     color: var(--textColor);
-    border-radius: 30px;
     font-size: 16px;
-    padding: 10px 20px;
-    box-shadow: 1px 1px 10px 2px
-      light-dark(rgb(0, 0, 0, 0.05), rgb(0, 0, 0, 0.2));
-    width: 70%;
-    max-width: 700px;
-    margin: 0 auto;
-    align-items: center;
     resize: none;
     font-family: Inter !important;
     outline: 0;
-    transition:
-      all 0.2s,
-      background 0s;
-  }
-  textarea.compact {
-    padding: 15px 20px;
-    height: 22px !important;
+    flex-grow: 1;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    transition: height 0.2s;
+    &::placeholder {
+      color: light-dark(rgba(0, 0, 0, 0.5), rgba(255, 255, 255, 0.5));
+    }
+    &.compact {
+      padding: 15px 20px;
+      height: 22px !important;
+    }
   }
   :global(.big) {
     padding: 15px 15px !important;
@@ -580,6 +704,40 @@
   @keyframes activateMode {
     0% {
       scale: 0.95;
+    }
+  }
+  :global(code) {
+    background: light-dark(rgb(238, 238, 238), rgb(19, 19, 19));
+    color: var(--textColor);
+    padding: 2px;
+    border-radius: 2px;
+    &::selection {
+      background: rgba(57, 159, 255, 0.3);
+      background: var(--containerColor);
+    }
+  }
+  :global(pre) {
+    background: #171717;
+    color: #dcdcdc;
+    padding: 12px 16px;
+    border-radius: 10px;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+  :global(pre code) {
+    background: none; /* remove inline code background */
+    color: inherit;
+    font-family: monospace;
+    font-size: 1.1em;
+    white-space: pre-wrap; /* optional: wrap long lines */
+  }
+
+  @media (prefers-color-scheme: light) {
+    .sidebar button img {
+      filter: invert(1) brightness(2);
+    }
+    #send-button img {
+      filter: invert(1);
     }
   }
 </style>

@@ -43,7 +43,7 @@ export async function addChat(history) {
     return new Promise((resolve, reject) => {
         // Generate a title from the first user message
         const firstUserMsg = history.find(msg => msg.role === 'user');
-        const title = firstUserMsg ? firstUserMsg.content.substring(0, 40) + "..." : "New Chat";
+        const title = firstUserMsg ? firstUserMsg.content.substring(0, 30) + "..." : "New Chat";
 
         const chat = {
             title: title,
