@@ -290,7 +290,7 @@
   });
 </script>
 
-<title>ChatGPT</title>
+<title>Celeste</title>
 <div
   style="transition: 0.4s cubic-bezier(0,.65,.21,1)"
   id={prompting ? "center" : "bottom"}
