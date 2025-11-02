@@ -2,19 +2,73 @@
   import { onDestroy, onMount } from "svelte";
   import settingsIcon from "$lib/assets/settings.svg";
   import newChatIcon from "$lib/assets/newChat.svg";
+  import sidebar from "$lib/assets/sidebar.svg";
+  import {
+    openDB,
+    addChat,
+    updateChat,
+    getAllChatInfo,
+    getChat,
+    deleteChat,
+  } from "$lib/db.js";
 
   let prompting = true;
   let prompt = "";
-  let model = "openai/gpt-5";
+  let model = "x-ai/grok-4-fast";
   var systemPrompt = "";
   let loading = false;
+  let reasonEnabled = false;
   let history = [];
   let realtResponse = "";
+  let sidebarExpanded = false;
+
+  let savedChats = [];
+  let currentChatId = null; // null means it's a new chat
 
   function newChat() {
     prompting = true;
     prompt = "";
     history = [];
+    currentChatId = null;
+  }
+
+  async function loadChatsForSidebar() {
+    try {
+      savedChats = await getAllChatInfo();
+    } catch (error) {
+      console.error("Failed to load chats:", error);
+    }
+  }
+
+  async function loadChat(id) {
+    try {
+      const loadedHistory = await getChat(id);
+      history = loadedHistory;
+      currentChatId = id;
+      prompting = false;
+      prompt = "";
+      realtResponse = "";
+      loading = false;
+    } catch (error) {
+      console.error("Failed to load chat:", error);
+    }
+  }
+
+  async function handleDeleteChat(id, event) {
+    // event.stopPropagation();
+    if (confirm("Are you sure you want to delete this chat?")) {
+      try {
+        await deleteChat(id);
+        // Remove from sidebar
+        savedChats = savedChats.filter((chat) => chat.id !== id);
+        // If it was the active chat, start a new one
+        if (currentChatId === id) {
+          newChat();
+        }
+      } catch (error) {
+        console.error("Failed to delete chat:", error);
+      }
+    }
   }
 
   async function sendQuery(query) {
@@ -29,6 +83,25 @@
     history = [...history, { role: "user", content: query }];
     loading = true;
 
+    // Save the history
+    const historySnapshot = [...history];
+    let newChatInfo = null;
+
+    try {
+      if (currentChatId === null) {
+        // This is a new chat. Add it to DB.
+        newChatInfo = await addChat(historySnapshot);
+        currentChatId = newChatInfo.id;
+        // Add to sidebar list
+        savedChats = [newChatInfo, ...savedChats];
+      } else {
+        // This is an existing chat. Update it.
+        await updateChat(currentChatId, historySnapshot);
+      }
+    } catch (error) {
+      console.error("Failed to save chat:", error);
+    }
+
     const response = await fetch("/api/query", {
       method: "POST",
       headers: {
@@ -38,6 +111,10 @@
         model: model,
         messages: history,
         stream: true,
+        reasoning: {
+          // effort: "medium",
+          enabled: reasonEnabled,
+        },
       }),
     });
 
@@ -70,6 +147,7 @@
             try {
               const parsed = JSON.parse(data);
               const content = parsed.choices[0].delta.content;
+
               if (content) {
                 loading = false;
                 realtResponse += content;
@@ -83,6 +161,16 @@
     } finally {
       reader.cancel();
       history = [...history, { role: "assistant", content: realtResponse }];
+
+      // Add to DB
+      if (currentChatId) {
+        try {
+          await updateChat(currentChatId, history);
+        } catch (error) {
+          console.error("Failed to save final chat history:", error);
+        }
+      }
+
       document.documentElement.scrollTo({
         left: 0,
         top:
@@ -92,6 +180,18 @@
       });
       realtResponse = "";
     }
+  }
+
+  function toggleSidebar() {
+    const sidebar = document.querySelector(".sidebar");
+    if (sidebarExpanded) {
+      document.documentElement.style.setProperty("--sidebarSize", "240px");
+    } else {
+      document.documentElement.style.setProperty("--sidebarSize", "55px");
+    }
+    sidebar.classList.toggle("expanded", sidebarExpanded);
+    sidebar.classList.toggle("compact", !sidebarExpanded);
+    sidebarExpanded = !sidebarExpanded;
   }
 
   function formatResponse(text) {
@@ -134,7 +234,13 @@
     }
   }
 
-  onMount(() => document.addEventListener("keydown", handleKey));
+  onMount(() => {
+    document.addEventListener("keydown", handleKey);
+
+    openDB().then(() => {
+      loadChatsForSidebar(); // Load chat list on start
+    });
+  });
   onDestroy(() => {
     if (typeof window !== "undefined")
       document.removeEventListener("keydown", handleKey);
@@ -172,7 +278,11 @@
     {/each}
     <div class="response">{@html formatResponse(realtResponse)}</div>
     {#if loading}
-      <div id="loading"></div>
+      {#if reasonEnabled}
+        <div id="reasoning">Thinking...</div>
+      {:else}
+        <div id="loading"></div>
+      {/if}
     {/if}
     <div id="spacing" style="height: 100px;"></div>
   </div>
@@ -194,22 +304,50 @@
     placeholder="Give more context, ask to be more concise"
   />
 </div>
-<div id="sidebar">
-  <button popovertarget="settings">
-    <img src={settingsIcon} alt="Settings Icon" />
+<div class="sidebar expanded">
+  <button
+    class="icon"
+    on:click={toggleSidebar}
+    style="bottom: auto; top: 10px;"
+  >
+    <img src={sidebar} alt="Toggle sidebar" />
   </button>
-  <button on:click={newChat} style="bottom: auto; top: 10px;">
+  <button class="icon" on:click={newChat} style="bottom: auto; top: 10px;">
     <img src={newChatIcon} alt="New Chat" />
   </button>
+  <div id="chat-list">
+    {#each savedChats as chat (chat.id)}
+      <button
+        class="chat-item"
+        on:mousedown={(e) => {
+          if (e.button === 0) {
+            loadChat(chat.id);
+          } else if (e.button === 1) {
+            e.preventDefault();
+            handleDeleteChat(chat.id);
+          }
+        }}
+      >
+        <span>{chat.title}</span>
+      </button>
+    {/each}
+  </div>
+  <div style="position: absolute; bottom: 10px; width: calc(100% - 12px);">
+    <button class="icon" popovertarget="settings">
+      <img src={settingsIcon} alt="Settings Icon" />
+    </button>
+  </div>
 </div>
 
-<style>
+<style lang="scss">
   @import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
   :root {
     color-scheme: dark light;
     background-color: light-dark(#fff, #212121);
     font-family: Inter;
     color: var(--textColor);
+
+    --sidebarSize: 240px;
 
     --containerColor: light-dark(
       rgba(0, 0, 0, 0.08),
@@ -242,73 +380,111 @@
     width: 50%;
     box-shadow: 1px 1px 14px 1px rgb(0, 0, 0, 0.5);
     animation: 0.2s settingsShow;
+    &::backdrop {
+      background: rgb(0, 0, 0, 0.5);
+      backdrop-filter: blur(1px);
+    }
+    & h1 {
+      font-size: 16px;
+      margin: 6px 0;
+      font-weight: 500;
+    }
+    & h2 {
+      font-size: 14px;
+      margin: 6px 0;
+      font-weight: 500;
+    }
+    & input {
+      color: white;
+      outline: 0;
+      background: var(--colorOutline);
+      border: 1px solid var(--colorOutline);
+      border-radius: 8px;
+      font-size: 15px;
+      padding: 6px 8px;
+      box-sizing: border-box;
+      width: 100%;
+      margin-top: 4px;
+    }
+    & p {
+      margin: 0;
+      margin-bottom: 16px;
+      font-size: 14px;
+      opacity: 0.4;
+    }
+    & hr {
+      opacity: 0.1;
+      margin: 14px 0px;
+    }
   }
-  #settings::backdrop {
-    background: rgb(0, 0, 0, 0.5);
-    backdrop-filter: blur(1px);
-  }
-  #settings h1 {
-    font-size: 16px;
-    margin: 6px 0;
-    font-weight: 500;
-  }
-  #settings h2 {
-    font-size: 14px;
-    margin: 6px 0;
-    font-weight: 500;
-  }
-  #settings input {
-    color: white;
-    outline: 0;
-    background: var(--colorOutline);
-    border: 1px solid var(--colorOutline);
-    border-radius: 8px;
-    font-size: 15px;
-    padding: 6px 8px;
-    box-sizing: border-box;
-    width: 100%;
-    margin-top: 4px;
-  }
-  #settings p {
-    margin: 0;
-    margin-bottom: 16px;
-    font-size: 14px;
-    opacity: 0.4;
-  }
-  #settings hr {
-    opacity: 0.1;
-    margin: 14px 0px;
-  }
-  #sidebar {
-    width: 55px;
+  .sidebar {
+    width: var(--sidebarSize);
     height: 100%;
     position: fixed;
     left: 0;
     padding: 6px;
     box-sizing: border-box;
     display: flex;
-    align-items: center;
+    flex-direction: column;
     border-right: 1px solid var(--colorOutline);
+    transition: 0.1s;
+    & button {
+      bottom: 10px;
+      background: transparent;
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      padding: 6px 6px;
+      &:hover {
+        background: light-dark(rgba(226, 226, 226, 0.9), rgb(48, 48, 48, 0.9));
+      }
+      &.icon {
+        text-align: center;
+      }
+      & img {
+        width: 20px;
+        margin-bottom: -2px;
+      }
+    }
   }
-  #sidebar button {
-    bottom: 10px;
-    position: absolute;
+  :global(.sidebar.compact) {
     background: transparent;
-    border: 0;
-    border-radius: 10px;
-    cursor: pointer;
-    width: calc(100% - 12px);
-    padding: 6px 0px;
   }
-  #sidebar button:hover {
-    background: light-dark(rgba(226, 226, 226, 0.9), rgb(48, 48, 48, 0.9));
+  :global(.sidebar.compact) #chat-list {
+    display: none;
   }
-  #sidebar button img {
-    width: 20px;
-    margin-bottom: -2px;
+  .sidebar.expanded {
+    background: light-dark(#f9f9f9, #181818);
+  }
+  .sidebar.expanded button {
+    text-align: left;
+  }
+  #reasoning {
+    background: linear-gradient(
+      90deg,
+      rgb(255, 255, 255, 0.6) 35%,
+      #5e5e5e 50%,
+      rgb(255, 255, 255, 0.6) 65%
+    );
+    cursor: default;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% auto;
+    animation: textShine 1s linear infinite;
+  }
+  @keyframes textShine {
+    0% {
+      background-position: 0% center;
+    }
+    100% {
+      background-position: 200% center;
+    }
   }
   @media (prefers-color-scheme: light) {
-    #sidebar button img {
+    .sidebar button img {
       filter: invert(1) brightness(2);
     }
   }
@@ -318,10 +494,10 @@
     }
   }
   div#chat {
-    width: 80%;
     position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+    width: calc(80% - var(--sidebarSize));
+    left: calc(10% + var(--sidebarSize));
+    right: 10%;
   }
   #loading {
     width: 16px;
@@ -335,27 +511,31 @@
       scale: 0.93;
     }
   }
+  .question,
+  .response {
+    margin-bottom: 36px;
+    white-space: pre-line;
+  }
   .question {
     background: var(--containerColor);
     width: fit-content;
     margin-left: auto;
     margin-right: 0;
-    margin-bottom: 36px;
-    padding: 8px 14px;
+    padding: 10px 14px;
     border-radius: 20px;
   }
-  .response {
-    margin-bottom: 34px;
-    white-space: pre-line;
+  div#center,
+  div#bottom {
+    display: flex;
+    flex-direction: column;
+    width: calc(100% - var(--sidebarSize));
+    justify-content: center;
+    margin-left: var(--sidebarSize);
   }
   div#center {
     position: absolute;
     top: 40%;
     transform: translateY(-50%);
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
   }
   div#center h1 {
     text-align: center;
@@ -364,12 +544,8 @@
   div#bottom {
     position: fixed;
     bottom: 20px;
-    display: flex;
     top: auto;
-    width: 100%;
-    flex-direction: column;
     z-index: 10;
-    justify-content: center;
   }
   textarea {
     background: var(--promptBgColor);
