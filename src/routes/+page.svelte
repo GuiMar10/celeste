@@ -61,6 +61,10 @@
       prompt = "";
       realtResponse = "";
       loading = false;
+      setTimeout(() => {
+        const scrollingElement = document.scrollingElement || document.body;
+        scrollingElement.scrollTop = scrollingElement.scrollHeight;
+      }, 10);
     } catch (error) {
       console.error("Failed to load chat:", error);
     }
@@ -326,7 +330,11 @@
     {#each history as msg}
       {#if msg.role !== "system"}
         <div class={msg.role == "user" ? "question" : "response"}>
-          {@html formatResponse(msg.content)}
+          {#if msg.role !== "user"}
+            {@html formatResponse(msg.content)}
+          {:else}
+            {msg.content}
+          {/if}
         </div>
       {/if}
     {/each}
@@ -403,7 +411,18 @@
   :root {
     color-scheme: dark light;
     background-color: var(--bgColor);
-    font-family: Inter;
+    font-family:
+      Inter,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      sans-serif,
+      "Apple Color Emoji",
+      "Segoe UI Emoji",
+      "Segoe UI Symbol";
     color: var(--textColor);
 
     --sidebarSize: 55px;
@@ -434,9 +453,9 @@
     );
     --colorOutline: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.05));
   }
-  ::selection {
-    background: rgba(57, 159, 255, 0.3);
-    background: var(--containerColor);
+  :global(*)::selection {
+    background: light-dark(rgb(196, 226, 255), rgb(40, 71, 100)) !important;
+    /* Themeable: background: var(--containerColor); */
   }
   :global(body) {
     margin: 0;
@@ -638,6 +657,8 @@
   .response {
     margin-bottom: 36px;
     white-space: pre-line;
+    overflow-wrap: anywhere;
+    font-variant-emoji: normal;
   }
   .question {
     background: var(--containerColor);
@@ -709,10 +730,6 @@
     color: var(--textColor);
     padding: 2px;
     border-radius: 2px;
-    &::selection {
-      background: rgba(57, 159, 255, 0.3);
-      background: var(--containerColor);
-    }
   }
   :global(pre) {
     background: #171717;
@@ -727,7 +744,7 @@
     color: inherit;
     font-family: monospace;
     font-size: 1.1em;
-    white-space: pre-wrap; /* optional: wrap long lines */
+    white-space: pre-wrap;
   }
 
   @media (prefers-color-scheme: light) {
