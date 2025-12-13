@@ -1,5 +1,6 @@
 <script>
     import { onDestroy, onMount } from "svelte";
+    import { encrypt, decrypt } from "$lib/crypto.js";
     import settingsIcon from "$lib/assets/settings.svg";
     import newChatIcon from "$lib/assets/newChat.svg";
     import sidebar from "$lib/assets/sidebar.svg";
@@ -25,6 +26,7 @@
 
     let savedChats = [];
     let currentChatId = null; // null means it's a new chat
+    let apiKey = "";
 
     const greetings = [
         "Hey, ready to dive in?",
@@ -125,6 +127,7 @@
             },
             body: JSON.stringify({
                 model,
+                apiKey,
                 messages: history,
                 stream: true,
                 reasoning: {
@@ -132,11 +135,11 @@
                     enabled: reasonEnabled,
                 },
                 /*
-        plugins: [
-          {
-            id: "web",
-          },
-        ], */
+            		plugins: [
+            		  {
+            		    id: "web",
+            		  },
+            		], */
             }),
         });
 
@@ -284,11 +287,15 @@
         }
     }
 
-    onMount(() => {
+    onMount(async () => {
         if (localStorage.getItem("model"))
             model = localStorage.getItem("model");
         if (localStorage.getItem("sysPrompt"))
             systemPrompt = localStorage.getItem("sysPrompt");
+        if (localStorage.getItem("apiKey")) {
+            const encrypted = localStorage.getItem("apiKey");
+            apiKey = (await decrypt(encrypted)) || "";
+        }
         document.addEventListener("keydown", handleKey);
 
         openDB().then(() => {
@@ -377,6 +384,17 @@
             localStorage.setItem("sysPrompt", e.target.value);
         }}
         placeholder="Give more context, ask to be more concise"
+    />
+    <hr />
+    <h2>OpenRouter API Key</h2>
+    <input
+        type="password"
+        bind:value={apiKey}
+        on:change={async (e) => {
+            const encrypted = await encrypt(e.target.value);
+            localStorage.setItem("apiKey", encrypted);
+        }}
+        placeholder="sk-or-v1-..."
     />
 </div>
 <div class="sidebar compact">
